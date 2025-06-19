@@ -105,27 +105,39 @@ public class Topaz {
         CommandMeta meta = commandManager.metaBuilder("topazreload").build();
         commandManager.register(meta, new ReloadCommand());
     }
+
+    private boolean isLocalAddress(String ip) {
+        return ip.startsWith("127.") || ip.equals("::1") || ip.startsWith("10.") || ip.startsWith("192.168.") || ip.matches("^172\\.(1[6-9]|2[0-9]|3[0-1])\\..*");
+    }
+
     @Subscribe
     public void onLoginEvent(LoginEvent e) {
         Toml messages = config.getTable("Messages");
-        if (e.getPlayer().hasPermission("topaz.bypass") || allowedIPs.contains(e.getPlayer().getRemoteAddress().getHostString())) {return;}
+        String playerIp = e.getPlayer().getRemoteAddress().getHostString();
+
+        if (isLocalAddress(playerIp)) { logger.info(e.getPlayer().getUsername() + "'s IP address is a local one. Ignoring them... (" + playerIp + ")"); return; }
+        if (e.getPlayer().hasPermission("topaz.bypass") || allowedIPs.contains(playerIp)) { return; }
+
         Toml options = config.getTable("Options");
-        if (blockedIPs.contains(e.getPlayer().getRemoteAddress().getHostString())) {
+        if (blockedIPs.contains(playerIp)) {
             e.setResult(ResultedEvent.ComponentResult.denied(text(messages.getString("usingVPN"))));
-            logger.warn(e.getPlayer().getUsername() + " (" + e.getPlayer().getUniqueId() + ") failed the proxy check! Cached blocked IP! (" + e.getPlayer().getRemoteAddress().getHostString() + ")");
+            logger.warn(e.getPlayer().getUsername() + " (" + e.getPlayer().getUniqueId() + ") failed the proxy check! Cached blocked IP! (" + playerIp + ")");
             return;
         } try { URL url;
-            if (options.getString("apikey") == null) { url = new URL("https://proxycheck.io/v2/" + e.getPlayer().getRemoteAddress().getHostString() + "?vpn=1"); }
-            else { url = new URL("https://proxycheck.io/v2/" + e.getPlayer().getRemoteAddress().getHostString() + "?vpn=1&key=" + options.getString("apikey")); }
+            if (options.getString("apikey") == null) { url = new URL("https://proxycheck.io/v2/" + playerIp + "?vpn=1"); }
+            else { url = new URL("https://proxycheck.io/v2/" + playerIp + "?vpn=1&key=" + options.getString("apikey")); }
             HttpURLConnection con = (HttpURLConnection) url.openConnection();
             con.setRequestMethod("GET");
-            if (con.getResponseCode() != HttpURLConnection.HTTP_OK) { e.setResult(ResultedEvent.ComponentResult.denied((text(messages.getString("errorkick"))))); throw new RuntimeException("Failed to connect! HTTP error code: " + con.getResponseCode()); }
+            if (con.getResponseCode() != HttpURLConnection.HTTP_OK) {
+                e.setResult(ResultedEvent.ComponentResult.denied((text(messages.getString("errorkick")))));
+                throw new RuntimeException("Failed to connect! HTTP error code: " + con.getResponseCode());
+            }
             BufferedReader in = new BufferedReader(new InputStreamReader(con.getInputStream()));
             String inputLine;
             StringBuffer response = new StringBuffer();
             while ((inputLine = in.readLine()) != null) { response.append(inputLine); }
             in.close();
-            JsonObject ipInfo = JsonParser.parseString(response.toString()).getAsJsonObject().getAsJsonObject(e.getPlayer().getRemoteAddress().getHostString());
+            JsonObject ipInfo = JsonParser.parseString(response.toString()).getAsJsonObject().getAsJsonObject(playerIp);
             if (ipInfo == null) {
                 logger.error("Something went wrong! Make sure you have enough API requests for today!\n\nHere's the JSON that Topaz received:");
                 logger.error(response.toString());
@@ -140,16 +152,17 @@ public class Topaz {
                     if (!options.getBoolean("letPlayersJoinWhenDenied")) { e.setResult(ResultedEvent.ComponentResult.denied((text(messages.getString("errorkick"))))); }}
             }
             if (ipInfo.has("proxy") && "yes".equals(ipInfo.get("proxy").getAsString())) {
-                blockedIPs.add(e.getPlayer().getRemoteAddress().getHostString());
+                blockedIPs.add(playerIp);
                 e.setResult(ResultedEvent.ComponentResult.denied(text(messages.getString("usingVPN"))));
-                logger.warn(e.getPlayer().getUsername() + " (" + e.getPlayer().getUniqueId() + ") failed the proxy check! (" + e.getPlayer().getRemoteAddress().getHostString() + ")");
-            } else { allowedIPs.add(e.getPlayer().getRemoteAddress().getHostString()); }
+                logger.warn(e.getPlayer().getUsername() + " (" + e.getPlayer().getUniqueId() + ") failed the proxy check! (" + playerIp + ")");
+            } else { allowedIPs.add(playerIp); }
         } catch (IOException ex) {
             logger.error("Something went wrong! Make sure you put your correct email in the config file and have enough API requests for today!");
             ex.printStackTrace();
             e.setResult(ResultedEvent.ComponentResult.denied(text((messages.getString("errorKick")))));
         }
     }
+
     public final class ReloadCommand implements SimpleCommand {
         @Override
         public void execute(final Invocation invocation) {
