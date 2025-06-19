@@ -12,6 +12,7 @@ import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.plugin.Plugin;
 import com.velocitypowered.api.plugin.annotation.DataDirectory;
 import com.velocitypowered.api.proxy.ProxyServer;
+import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.slf4j.Logger;
 import java.io.*;
 import java.net.HttpURLConnection;
@@ -113,6 +114,7 @@ public class Topaz {
     @Subscribe
     public void onLoginEvent(LoginEvent e) {
         Toml messages = config.getTable("Messages");
+        MiniMessage miniMessage = MiniMessage.miniMessage();
         String playerIp = e.getPlayer().getRemoteAddress().getHostString();
 
         if (isLocalAddress(playerIp)) { logger.info(e.getPlayer().getUsername() + "'s IP address is a local one. Ignoring them... (" + playerIp + ")"); return; }
@@ -120,7 +122,7 @@ public class Topaz {
 
         Toml options = config.getTable("Options");
         if (blockedIPs.contains(playerIp)) {
-            e.setResult(ResultedEvent.ComponentResult.denied(text(messages.getString("usingVPN"))));
+            e.setResult(ResultedEvent.ComponentResult.denied(miniMessage.deserialize(messages.getString("usingVPN"))));
             logger.warn(e.getPlayer().getUsername() + " (" + e.getPlayer().getUniqueId() + ") failed the proxy check! Cached blocked IP! (" + playerIp + ")");
             return;
         } try { URL url;
@@ -129,7 +131,7 @@ public class Topaz {
             HttpURLConnection con = (HttpURLConnection) url.openConnection();
             con.setRequestMethod("GET");
             if (con.getResponseCode() != HttpURLConnection.HTTP_OK) {
-                e.setResult(ResultedEvent.ComponentResult.denied((text(messages.getString("errorkick")))));
+                e.setResult(ResultedEvent.ComponentResult.denied(miniMessage.deserialize(messages.getString("errorKick"))));
                 throw new RuntimeException("Failed to connect! HTTP error code: " + con.getResponseCode());
             }
             BufferedReader in = new BufferedReader(new InputStreamReader(con.getInputStream()));
@@ -141,7 +143,7 @@ public class Topaz {
             if (ipInfo == null) {
                 logger.error("Something went wrong! Make sure you have enough API requests for today!\n\nHere's the JSON that Topaz received:");
                 logger.error(response.toString());
-                e.setResult(ResultedEvent.ComponentResult.denied(text((messages.getString("errorKick")))));
+                e.setResult(ResultedEvent.ComponentResult.denied(miniMessage.deserialize(messages.getString("errorKick"))));
                 return;
             }
             if (ipInfo.has("status")) {
@@ -149,17 +151,20 @@ public class Topaz {
                 if ("warning".equals(status) || "error".equals(status)) { logger.error("ProxyCheck returned a warning/error! (" + ipInfo.get("message").getAsString() + ")\n\nHere's the JSON that Topaz received:"); logger.error(response.toString()); }
                 if ("denied".equals(status)) {
                     logger.error("ProxyCheck denied your request! (" + ipInfo.get("message").getAsString() + ")");
-                    if (!options.getBoolean("letPlayersJoinWhenDenied")) { e.setResult(ResultedEvent.ComponentResult.denied((text(messages.getString("errorkick"))))); }}
+                    if (!options.getBoolean("letPlayersJoinWhenDenied")) {
+                        e.setResult(ResultedEvent.ComponentResult.denied(miniMessage.deserialize(messages.getString("errorKick"))));
+                    }
+                }
             }
             if (ipInfo.has("proxy") && "yes".equals(ipInfo.get("proxy").getAsString())) {
                 blockedIPs.add(playerIp);
-                e.setResult(ResultedEvent.ComponentResult.denied(text(messages.getString("usingVPN"))));
+                e.setResult(ResultedEvent.ComponentResult.denied(miniMessage.deserialize(messages.getString("usingVPN"))));
                 logger.warn(e.getPlayer().getUsername() + " (" + e.getPlayer().getUniqueId() + ") failed the proxy check! (" + playerIp + ")");
             } else { allowedIPs.add(playerIp); }
         } catch (IOException ex) {
             logger.error("Something went wrong! Make sure you put your correct email in the config file and have enough API requests for today!");
             ex.printStackTrace();
-            e.setResult(ResultedEvent.ComponentResult.denied(text((messages.getString("errorKick")))));
+            e.setResult(ResultedEvent.ComponentResult.denied(miniMessage.deserialize(messages.getString("errorKick"))));
         }
     }
 
