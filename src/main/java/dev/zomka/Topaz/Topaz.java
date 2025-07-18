@@ -125,9 +125,9 @@ public class Topaz {
             e.setResult(ResultedEvent.ComponentResult.denied(miniMessage.deserialize(messages.getString("usingVPN"))));
             logger.warn(e.getPlayer().getUsername() + " (" + e.getPlayer().getUniqueId() + ") failed the proxy check! Cached blocked IP! (" + playerIp + ")");
             return;
-        } try { URL url;
-            if (options.getString("apikey") == null) { url = new URL("https://proxycheck.io/v2/" + playerIp + "?vpn=1"); }
-            else { url = new URL("https://proxycheck.io/v2/" + playerIp + "?vpn=1&key=" + options.getString("apikey")); }
+        }
+        try {
+            URL url = new URL("https://api.ha1fdan.xyz/ip/" + playerIp);
             HttpURLConnection con = (HttpURLConnection) url.openConnection();
             con.setRequestMethod("GET");
             if (con.getResponseCode() != HttpURLConnection.HTTP_OK) {
@@ -136,33 +136,25 @@ public class Topaz {
             }
             BufferedReader in = new BufferedReader(new InputStreamReader(con.getInputStream()));
             String inputLine;
-            StringBuffer response = new StringBuffer();
+            StringBuilder response = new StringBuilder();
             while ((inputLine = in.readLine()) != null) { response.append(inputLine); }
             in.close();
-            JsonObject ipInfo = JsonParser.parseString(response.toString()).getAsJsonObject().getAsJsonObject(playerIp);
+            JsonObject ipInfo = JsonParser.parseString(response.toString()).getAsJsonObject();
             if (ipInfo == null) {
-                logger.error("Something went wrong! Make sure you have enough API requests for today!\n\nHere's the JSON that Topaz received:");
+                logger.error("Something went wrong! Make sure your API is running!\n\nHere's the JSON that Topaz received:");
                 logger.error(response.toString());
                 e.setResult(ResultedEvent.ComponentResult.denied(miniMessage.deserialize(messages.getString("errorKick"))));
                 return;
             }
-            if (ipInfo.has("status")) {
-                String status = ipInfo.get("status").getAsString();
-                if ("warning".equals(status) || "error".equals(status)) { logger.error("ProxyCheck returned a warning/error! (" + ipInfo.get("message").getAsString() + ")\n\nHere's the JSON that Topaz received:"); logger.error(response.toString()); }
-                if ("denied".equals(status)) {
-                    logger.error("ProxyCheck denied your request! (" + ipInfo.get("message").getAsString() + ")");
-                    if (!options.getBoolean("letPlayersJoinWhenDenied")) {
-                        e.setResult(ResultedEvent.ComponentResult.denied(miniMessage.deserialize(messages.getString("errorKick"))));
-                    }
-                }
-            }
-            if (ipInfo.has("proxy") && "yes".equals(ipInfo.get("proxy").getAsString())) {
+            if (ipInfo.has("isVpnOrDc") && ipInfo.get("isVpnOrDc").getAsBoolean()) {
                 blockedIPs.add(playerIp);
                 e.setResult(ResultedEvent.ComponentResult.denied(miniMessage.deserialize(messages.getString("usingVPN"))));
                 logger.warn(e.getPlayer().getUsername() + " (" + e.getPlayer().getUniqueId() + ") failed the proxy check! (" + playerIp + ")");
-            } else { allowedIPs.add(playerIp); }
+            } else {
+                allowedIPs.add(playerIp);
+            }
         } catch (IOException ex) {
-            logger.error("Something went wrong! Make sure you put your correct email in the config file and have enough API requests for today!");
+            logger.error("Something went wrong! Make sure your local API is running and accessible!");
             ex.printStackTrace();
             e.setResult(ResultedEvent.ComponentResult.denied(miniMessage.deserialize(messages.getString("errorKick"))));
         }
